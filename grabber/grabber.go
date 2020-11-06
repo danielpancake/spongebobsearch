@@ -44,14 +44,11 @@ func getTranscript(url string) string {
 	return transcript.Find(".mw-parser-output ul").Text()
 }
 
-func writeTranscript(e Episode, transcript string) string {
-	var filename string
-
+func writeTranscript(e Episode, transcript string) {
 	if transcript != "" {
 		util.MkdirAll("output/" + e.category)
 
-		filename = fmt.Sprintf("output/%s[%s] %s.txt", e.category, e.id, e.title)
-		file, err := os.Create(filename)
+		file, err := os.Create("output/" + makeFilename(e))
 		util.PanicError(err)
 
 		json, err := json.Marshal(strings.Split(transcript, "\n"))
@@ -60,8 +57,6 @@ func writeTranscript(e Episode, transcript string) string {
 		file.Write(json)
 		file.Close()
 	}
-
-	return filename
 }
 
 func episodeExtractor(table *goquery.Selection, category string) []Episode {
@@ -80,6 +75,10 @@ func episodeExtractor(table *goquery.Selection, category string) []Episode {
 	return temp
 }
 
+func makeFilename(e Episode) string {
+	return fmt.Sprintf("%s[%s] %s.txt", e.category, e.id, e.title)
+}
+
 func validateFilename(text string) string {
 	reg, err := regexp.Compile("[^a-zA-Z0-9-,&'\" ]+")
 	util.PanicError(err)
@@ -93,8 +92,6 @@ func GetAllEpisodes() []string {
 
 	var episodes []Episode
 	var index []string
-
-	c := make(chan string)
 
 	// Get information about all episodes
 	var h2, h3, h4 string
@@ -138,14 +135,12 @@ func GetAllEpisodes() []string {
 	bar := pb.StartNew(len(episodes))
 
 	for _, e := range episodes {
+		index = append(index, makeFilename(e))
 		waiter.Add(1)
 
 		go func(e Episode, bar *pb.ProgressBar) {
 			transcript := getTranscript(e.link)
-
-			if path := writeTranscript(e, transcript); path != "" {
-				c <- path
-			}
+			writeTranscript(e, transcript)
 
 			bar.Increment()
 			waiter.Done()
@@ -153,15 +148,8 @@ func GetAllEpisodes() []string {
 	}
 
 	// Wait until proccess is done
-	go func() {
-		waiter.Wait()
-		bar.Finish()
-		close(c)
-	}()
-
-	for path := range c {
-		index = append(index, path)
-	}
+	waiter.Wait()
+	bar.Finish()
 
 	return index
 }
