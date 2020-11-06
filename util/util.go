@@ -1,6 +1,8 @@
 package util
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"os"
 )
@@ -17,4 +19,13 @@ func MkdirAll(directory string) {
 	if _, err := os.Stat(directory); os.IsNotExist(err) {
 		os.MkdirAll(directory, os.ModePerm)
 	}
+}
+
+// JSONFromFile loads json from file and unmarshals to the interface given
+func JSONFromFile(from string, to interface{}) {
+	file, err := ioutil.ReadFile(from)
+	PanicError(err)
+
+	err = json.Unmarshal(file, to)
+	PanicError(err)
 }
