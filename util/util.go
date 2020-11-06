@@ -29,3 +29,14 @@ func JSONFromFile(from string, to interface{}) {
 	err = json.Unmarshal(file, to)
 	PanicError(err)
 }
+
+func JSONToFile(from interface{}, to string) {
+	file, err := os.Create(to)
+	PanicError(err)
+
+	json, err := json.Marshal(from)
+	PanicError(err)
+
+	file.Write(json)
+	file.Close()
+}

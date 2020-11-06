@@ -102,7 +102,7 @@ func (index Index) Search(query string) []Location {
 }
 
 // GetFromIndex gets specified part of transcipt
-func (index Index) GetFromIndex(contents []string, coord Location) string {
+func (index Index) GetFromIndex(contents []string, coord Location) (string, string) {
 	var out string
 	path := "output/" + contents[coord[0]]
 
@@ -112,5 +112,5 @@ func (index Index) GetFromIndex(contents []string, coord Location) string {
 		out = data[coord[1]]
 	}
 
-	return out
+	return out, contents[coord[0]]
 }
