@@ -1,11 +1,14 @@
 package grabber
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
+	"sync"
 
 	"spongebobdatabase/util"
 
@@ -41,18 +44,24 @@ func getTranscript(url string) string {
 	return transcript.Find(".mw-parser-output ul").Text()
 }
 
-func writeTranscript(e Episode, transcript string, bar *pb.ProgressBar) {
+func writeTranscript(e Episode, transcript string) string {
+	var filename string
+
 	if transcript != "" {
 		util.MkdirAll("output/" + e.category)
 
-		file, err := os.Create(fmt.Sprintf("output/%s[%s] %s.txt", e.category, e.id, e.title))
+		filename = fmt.Sprintf("output/%s[%s] %s.txt", e.category, e.id, e.title)
+		file, err := os.Create(filename)
 		util.PanicError(err)
 
-		bar.Increment()
+		json, err := json.Marshal(strings.Split(transcript, "\n"))
+		util.PanicError(err)
 
-		file.WriteString(transcript)
+		file.Write(json)
 		file.Close()
 	}
+
+	return filename
 }
 
 func episodeExtractor(table *goquery.Selection, category string) []Episode {
@@ -78,9 +87,14 @@ func validateFilename(text string) string {
 	return reg.ReplaceAllString(text, "")
 }
 
-// GetAllEpisodes gets all transcipts from SpongeBob wiki
-func GetAllEpisodes() {
+// GetAllEpisodes gets all transcipts from SpongeBob wiki and returnes array or relative paths
+func GetAllEpisodes() []string {
+	var waiter sync.WaitGroup
+
 	var episodes []Episode
+	var index []string
+
+	c := make(chan string)
 
 	// Get information about all episodes
 	var h2, h3, h4 string
@@ -123,10 +137,31 @@ func GetAllEpisodes() {
 
 	bar := pb.StartNew(len(episodes))
 
-	util.MkdirAll("output")
 	for _, e := range episodes {
-		go writeTranscript(e, getTranscript(e.link), bar)
+		waiter.Add(1)
+
+		go func(e Episode, bar *pb.ProgressBar) {
+			transcript := getTranscript(e.link)
+
+			if path := writeTranscript(e, transcript); path != "" {
+				c <- path
+			}
+
+			bar.Increment()
+			waiter.Done()
+		}(e, bar)
 	}
 
-	bar.Finish()
+	// Wait until proccess is done
+	go func() {
+		waiter.Wait()
+		bar.Finish()
+		close(c)
+	}()
+
+	for path := range c {
+		index = append(index, path)
+	}
+
+	return index
 }
