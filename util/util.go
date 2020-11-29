@@ -29,7 +29,7 @@ func MkdirAll(directory string) {
 
 // ValidateFilename removes all illegal characters from filename.
 func ValidateFilename(text string) string {
-	re, err := regexp.Compile("[^A-Za-z0-9-,&'\" ]+")
+	re, err := regexp.Compile("\\s*[^A-Za-z0-9-,&'\" ]+\\s*")
 	PanicError(err)
 
 	return re.ReplaceAllString(text, "")

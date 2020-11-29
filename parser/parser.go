@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2"
+	"github.com/gookit/color"
 	snowball "github.com/kljensen/snowball/english"
 )
 
@@ -79,15 +80,6 @@ func Tokenize(text string) []string {
 	})
 }
 
-// FilterLowercase puts all strings in the array to their lowercase.
-func FilterLowercase(tokens []string) []string {
-	r := make([]string, len(tokens))
-	for i, token := range tokens {
-		r[i] = strings.ToLower(token)
-	}
-	return r
-}
-
 // FilterStopwords removes stopwords from the array.
 func FilterStopwords(tokens []string) []string {
 	var r []string
@@ -111,8 +103,26 @@ func FilterStemmer(tokens []string) []string {
 // Analyze puts words to their lowercase, removes stopwords words and returns an array of word stems.
 func Analyze(input string) []string {
 	tokens := Tokenize(input)
-	tokens = FilterLowercase(tokens)
 	tokens = FilterStopwords(tokens)
 	tokens = FilterStemmer(tokens)
 	return tokens
+}
+
+// Highlight highlights matching words in string.
+func Highlight(input string, word string, c color.Color) string {
+	highlight := c.Render
+	word = snowball.Stem(word, false)
+	re, _ := regexp.Compile("[A-Za-z0-9'\r\n]+")
+
+	indexes := re.FindAllIndex([]byte(input), -1)
+	for _, i := range indexes {
+		match := input[i[0]:i[1]]
+		word2 := snowball.Stem(match, false)
+
+		if word == word2 {
+			re2 := regexp.MustCompile("(?i)" + match + "[\\w]*")
+			input = re2.ReplaceAllString(input, highlight(re2.FindString(input)))
+		}
+	}
+	return input
 }

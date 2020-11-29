@@ -115,7 +115,25 @@ func (index Index) Search(query string) []Location {
 		value := index[token]
 
 		if value != nil {
-			output = append(output, value...)
+			if output == nil {
+				output = append(output, value...)
+			} else {
+				output = intersection(output, value)
+			}
+		}
+	}
+
+	return output
+}
+
+func intersection(a []Location, b []Location) []Location {
+	var output []Location
+
+	for _, aa := range a {
+		for _, bb := range b {
+			if aa == bb {
+				output = append(output, aa)
+			}
 		}
 	}
 

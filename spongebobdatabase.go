@@ -7,9 +7,13 @@ import (
 	"path/filepath"
 	"spongebobdatabase/grabber"
 	"spongebobdatabase/indexer"
+	"spongebobdatabase/parser"
 	"spongebobdatabase/util"
+	"strings"
 
 	"spongebobdatabase/types"
+
+	"github.com/gookit/color"
 )
 
 func build() {
@@ -107,6 +111,10 @@ This command will grab SpongeBob transcripts and create both table of contents a
 					character := characters[result[1]]
 					if character != "" {
 						speaker = character + ": "
+					}
+
+					for _, q := range strings.Split(query, " ") {
+						line = parser.Highlight(line, q, color.FgLightYellow)
 					}
 
 					fmt.Println(at)
