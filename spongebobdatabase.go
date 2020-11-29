@@ -6,56 +6,50 @@ import (
 	"os"
 	"path/filepath"
 	"spongebobdatabase/grabber"
-	"spongebobdatabase/search"
+	"spongebobdatabase/indexer"
 	"spongebobdatabase/util"
+
+	"spongebobdatabase/types"
 )
 
 func build() {
-	fmt.Println("Getting all SpongeBob transcripts, please wait...")
-	contents := grabber.GetAllEpisodes()
-	util.JSONToFile(contents, "contents.txt")
+	database := grabber.GetContents()
+	grabber.GetAllTranscripts(database)
+	grabber.WriteAllTranscripts(database)
 
-	fmt.Print("\nBuilding index, please wait... ")
-	index := make(search.Index)
-	for id, path := range contents {
-		if _, err := os.Stat("output/" + path); err == nil {
-			index.AddToIndex(id, "output/"+path)
-		}
-	}
-	fmt.Println("Done!")
+	contents := indexer.GenerateContents(database)
+	util.CompressAndWrite(contents, "contents.gz")
 
-	util.JSONToFile(index, "index.txt")
+	characters := indexer.GetAllCharacters(contents)
+	util.CompressAndWrite(characters, "characters.gz")
+
+	index := make(indexer.Index)
+	index.AddAllToIndex(contents, characters)
+	index.Build("index.gz")
 }
 
 func main() {
 	filename := filepath.Base(os.Args[0])
 	info := fmt.Sprintf(`usage: %s [-c | create] [-r | rebuild] [-s <query> | search " query "]
 	
-For the first initialisation it is advised to run: %s create
+For the first initialization it is advised to run: %s -c
 This command will grab SpongeBob transcripts and create both table of contents and index`, filename, filename)
 
 	args := os.Args[1:]
-
 	if len(args) == 0 {
 		fmt.Println(info)
 	} else {
 		var query string
-
-		c := false
-		r := false
-		s := false
+		c, r, s := false, false, false
 
 		for _, arg := range args {
 			switch arg {
 			case "-c", "create":
 				c = true
-
 			case "-r", "rebuild":
 				r = true
-
 			case "-s", "search":
 				s = true
-
 			default:
 				if s {
 					query = arg
@@ -67,50 +61,59 @@ This command will grab SpongeBob transcripts and create both table of contents a
 			}
 		}
 
-		_, err := os.Stat("contents.txt")
+		_, err := os.Stat("contents.gz")
 		contentIsPresent := err == nil
 
-		_, err = os.Stat("index.txt")
+		_, err = os.Stat("characters.gz")
+		content2IsPresent := err == nil
+
+		_, err = os.Stat("index.gz")
 		indexIsPresent := err == nil
 
 		if r {
 			build()
 		} else if c {
-			if contentIsPresent {
-				fmt.Println("Table of contents already exists! Run: " + filename + " rebuild")
-				if indexIsPresent {
-					fmt.Println("Getting all SpongeBob transcripts, please wait...")
-				}
-			} else {
-				build()
+			if contentIsPresent || content2IsPresent || indexIsPresent {
+				fmt.Println("Table of contents or index already exists! Run: " + filename + " -r to rebuild.")
+				return
 			}
+
+			build()
 		}
 
 		if query != "" {
-			if contentIsPresent && indexIsPresent {
-				var contents []string
-				util.JSONFromFile("contents.txt", &contents)
+			if contentIsPresent && content2IsPresent && indexIsPresent {
+				var contents types.Contents
+				util.DecompressAndRead("contents.gz", &contents)
 
-				index := make(search.Index)
+				var characters types.Contents
+				util.DecompressAndRead("characters.gz", &characters)
 
-				index.LoadFromFile("index.txt")
+				index := make(indexer.Index)
+				index.Load("index.gz")
+
 				results := index.Search(query)
-
-				num := len(results)
-				if num > 0 {
-					fmt.Printf("Word \"%s\" has been found %d times:\n", query, num)
+				matches := len(results)
+				if matches > 0 {
+					fmt.Printf("\"%s\" has been found %d times:\n", query, matches)
 				} else {
-					fmt.Printf("No matches for word \"%s\"", query)
+					fmt.Printf("No matches for \"%s\"", query)
 				}
 
 				for i, result := range results {
-					paragraph, at := index.GetFromIndex(contents, result)
+					var speaker string
+					line, at := index.GetFromIndex(contents, characters, result)
+
+					character := characters[result[1]]
+					if character != "" {
+						speaker = character + ": "
+					}
 
 					fmt.Println(at)
-					fmt.Println(`	` + paragraph + "\n")
+					fmt.Println("\t" + speaker + line + "\n")
 
 					if (i+1)%5 == 0 {
-						fmt.Printf("Press 'Enter' to show more... (%d / %d)", i+1, num)
+						fmt.Printf("Press 'Enter' to show more... (%d / %d)", i+1, matches)
 						bufio.NewReader(os.Stdin).ReadBytes('\n')
 						fmt.Println("")
 					}

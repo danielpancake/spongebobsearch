@@ -1,155 +1,138 @@
 package grabber
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"regexp"
-	"strings"
-	"sync"
-
+	"spongebobdatabase/parser"
+	"spongebobdatabase/types"
 	"spongebobdatabase/util"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/cheggaaa/pb"
 )
 
-// Episode stores information about episode
-type Episode struct {
-	id       string
-	title    string
-	category string
-	link     string
+// TranscriptDS is a data structure which stores transcript along with its formation.
+type TranscriptDS struct {
+	ID         string
+	Title      string
+	Category   string
+	URL        string
+	Transcript types.Transcript
 }
 
-func getDocument(url string) *goquery.Document {
-	page, err := http.Get(url)
-	util.PanicError(err)
+var base string = "https://spongebob.fandom.com/"
 
-	defer page.Body.Close()
-	if page.StatusCode != 200 {
-		log.Fatalf("Error occured! Status Code: %d %s", page.StatusCode, page.Status)
-	}
+// GetContents gets information about every episode, short or movie from SpongeBob wiki page.
+// It returns array of transcript's information.
+func GetContents() []TranscriptDS {
+	var contents []TranscriptDS
+	fmt.Println("Collecting information from SpongeBob wiki page, please wait...")
 
-	document, err := goquery.NewDocumentFromReader(page.Body)
-	util.PanicError(err)
-
-	return document
-}
-
-func getTranscript(url string) string {
-	transcript := getDocument("https://spongebob.fandom.com/" + url)
-	return transcript.Find(".mw-parser-output ul").Text()
-}
-
-func writeTranscript(e Episode, transcript string) {
-	if transcript != "" {
-		util.MkdirAll("output/" + e.category)
-
-		file, err := os.Create("output/" + makeFilename(e))
-		util.PanicError(err)
-
-		json, err := json.Marshal(strings.Split(transcript, "\n"))
-		util.PanicError(err)
-
-		file.Write(json)
-		file.Close()
-	}
-}
-
-func episodeExtractor(table *goquery.Selection, category string) []Episode {
-	var temp []Episode
-	table.Find("tbody tr").Each(func(i int, tr *goquery.Selection) {
-		td := tr.Find("td").First()
-
-		id := validateFilename(td.Text())
-		title := validateFilename(td.Next().Text())
-		link, exists := td.Next().Next().Find("a").Attr("href")
-
-		if id != "" && title != "" && exists {
-			temp = append(temp, Episode{id, title, category, link})
-		}
-	})
-	return temp
-}
-
-func makeFilename(e Episode) string {
-	return fmt.Sprintf("%s[%s] %s.txt", e.category, e.id, e.title)
-}
-
-func validateFilename(text string) string {
-	reg, err := regexp.Compile("[^a-zA-Z0-9-,&'\" ]+")
-	util.PanicError(err)
-
-	return reg.ReplaceAllString(text, "")
-}
-
-// GetAllEpisodes gets all transcipts from SpongeBob wiki and returnes array or relative paths
-func GetAllEpisodes() []string {
-	var waiter sync.WaitGroup
-
-	var episodes []Episode
-	var index []string
-
-	// Get information about all episodes
 	var h2, h3, h4 string
-	document := getDocument("https://spongebob.fandom.com/wiki/List_of_transcripts")
-
-	document.Find(".mw-parser-output div:nth-child(2)").Children().Each(
-		func(i int, header *goquery.Selection) {
-			switch goquery.NodeName(header) {
+	wikipage := util.GetDocument(base + "/wiki/List_of_transcripts")
+	wikipage.Find(".mw-parser-output div:nth-child(2)").Children().Each(
+		func(i int, section *goquery.Selection) {
+			switch goquery.NodeName(section) {
 			case "h2":
-				h2 = validateFilename(header.Text()) + "/"
+				h2 = util.ValidateFilename(section.Text()) + "/"
 				h3 = ""
 				h4 = ""
 
-				table := header.Next()
-				if table.Is(".wikitable") {
-					episodes = append(episodes, episodeExtractor(table, h2)...)
+				if table := section.Next(); table.Is(".wikitable") {
+					contents = append(contents, contentExtractor(table, h2)...)
 				}
-				break
-
 			case "h3":
-				h3 = validateFilename(header.Text()) + "/"
+				h3 = util.ValidateFilename(section.Text()) + "/"
 				h4 = ""
 
-				table := header.Next()
-				if table.Is(".wikitable") {
-					episodes = append(episodes, episodeExtractor(table, h2+h3)...)
+				if table := section.Next(); table.Is(".wikitable") {
+					contents = append(contents, contentExtractor(table, h2+h3)...)
 				}
-				break
-
 			case "h4":
-				h4 = validateFilename(header.Text()) + "/"
+				h4 = util.ValidateFilename(section.Text()) + "/"
 
-				table := header.Next()
-				if table.Is(".wikitable") {
-					episodes = append(episodes, episodeExtractor(table, h2+h3+h4)...)
+				if table := section.Next(); table.Is(".wikitable") {
+					contents = append(contents, contentExtractor(table, h2+h3+h4)...)
 				}
-				break
 			}
 		})
 
-	bar := pb.StartNew(len(episodes))
+	return contents
+}
 
-	for _, e := range episodes {
-		index = append(index, makeFilename(e))
+func contentExtractor(section *goquery.Selection, category string) []TranscriptDS {
+	var temp []TranscriptDS
+
+	section.Find("tbody tr").Each(
+		func(i int, tr *goquery.Selection) {
+			td := tr.Find("td").First()
+
+			id := util.ValidateFilename(td.Text())
+			title := util.ValidateFilename(td.Next().Text())
+			url, exists := td.Next().Next().Find("a").Attr("href")
+
+			if id != "" && title != "" && exists {
+				temp = append(temp, TranscriptDS{id, title, category, url, nil})
+			}
+		})
+
+	return temp
+}
+
+// GetTranscript gets transcript as text.
+func (t *TranscriptDS) GetTranscript() {
+	var temp string
+
+	util.GetDocument(base + t.URL).Find(".mw-parser-output ul li").Each(
+		func(i int, s *goquery.Selection) {
+			temp += s.Text() + "\n"
+		})
+
+	t.Transcript = parser.ParseTranscript(temp)
+}
+
+// GetAllTranscripts gets all transcripts.
+func GetAllTranscripts(ts []TranscriptDS) {
+	var waiter sync.WaitGroup
+	fmt.Println("Scraping transripts, please wait...")
+	bar := pb.StartNew(len(ts))
+
+	for i := 0; i < len(ts); i++ {
 		waiter.Add(1)
 
-		go func(e Episode, bar *pb.ProgressBar) {
-			transcript := getTranscript(e.link)
-			writeTranscript(e, transcript)
-
+		go func(t *TranscriptDS, bar *pb.ProgressBar) {
+			t.GetTranscript()
 			bar.Increment()
 			waiter.Done()
-		}(e, bar)
+		}(&ts[i], bar)
 	}
 
-	// Wait until proccess is done
 	waiter.Wait()
 	bar.Finish()
+}
 
-	return index
+// WriteTranscript saves transcript to the file
+func (t *TranscriptDS) WriteTranscript() {
+	util.MkdirAll("output/" + t.Category)
+	util.JSONToFile(t.Transcript, fmt.Sprintf("output/%s[%s] %s.txt", t.Category, t.ID, t.Title))
+}
+
+// WriteAllTranscripts writes all transcripts.
+func WriteAllTranscripts(ts []TranscriptDS) {
+	var waiter sync.WaitGroup
+	fmt.Println("Parsing and writing transripts, please wait...")
+	bar := pb.StartNew(len(ts))
+
+	for i := 0; i < len(ts); i++ {
+		waiter.Add(1)
+
+		go func(t *TranscriptDS, bar *pb.ProgressBar) {
+			t.WriteTranscript()
+			waiter.Done()
+			bar.Increment()
+		}(&ts[i], bar)
+	}
+
+	waiter.Wait()
+	bar.Finish()
 }
