@@ -100,19 +100,24 @@ func GrabTranscript(t TranscriptDS) {
 }
 
 // GrabAllTranscripts gets and writes all transcripts to the files.
-func GrabAllTranscripts(ts []TranscriptDS) {
+func GrabAllTranscripts(ts []TranscriptDS, goroutines bool) {
 	var waiter sync.WaitGroup
 	fmt.Println("Scraping, parsing and writing transripts, please wait...")
 	bar := pb.StartNew(len(ts))
 
+	grab := func(t TranscriptDS, bar *pb.ProgressBar) {
+		GrabTranscript(t)
+		bar.Increment()
+		waiter.Done()
+	}
+
 	for i := 0; i < len(ts); i++ {
 		waiter.Add(1)
-
-		go func(t TranscriptDS, bar *pb.ProgressBar) {
-			GrabTranscript(t)
-			bar.Increment()
-			waiter.Done()
-		}(ts[i], bar)
+		if goroutines {
+			go grab(ts[i], bar)
+		} else {
+			grab(ts[i], bar)
+		}
 	}
 
 	waiter.Wait()

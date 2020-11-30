@@ -16,9 +16,9 @@ import (
 	"github.com/gookit/color"
 )
 
-func build() {
+func build(goroutines bool) {
 	database := grabber.GetContents()
-	grabber.GrabAllTranscripts(database)
+	grabber.GrabAllTranscripts(database, goroutines)
 
 	contents := indexer.GenerateContents(database)
 	util.CompressAndWrite(contents, "contents.gz")
@@ -33,17 +33,20 @@ func build() {
 
 func main() {
 	filename := filepath.Base(os.Args[0])
-	info := fmt.Sprintf(`usage: %s [-c | create] [-s <query> | search " query "] [-r | rebuild]
+	info := fmt.Sprintf(`usage: %s [-c | create] [-s <query> | search " query "] [-r | rebuild] [-g | goroutines]
 	
 For the first initialization it is advised to run: %s -c
-This command will grab SpongeBob transcripts and create both table of contents and index`, filename, filename)
+This command will grab SpongeBob transcripts and create both table of contents and index
+
+If you have >1024MB of RAM you could use -g flag to use multithreading while grabbing transcripts.
+Using this flag on machines with less amount of RAM could cause Out of Memory thus not recommended.`, filename, filename)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
 		fmt.Println(info)
 	} else {
 		var query string
-		c, r, s := false, false, false
+		c, r, s, g := false, false, false, false
 
 		for _, arg := range args {
 			switch arg {
@@ -53,6 +56,8 @@ This command will grab SpongeBob transcripts and create both table of contents a
 				r = true
 			case "-s", "search":
 				s = true
+			case "-g", "goroutines":
+				g = true
 			default:
 				if s {
 					query = arg
@@ -74,14 +79,14 @@ This command will grab SpongeBob transcripts and create both table of contents a
 		indexIsPresent := err == nil
 
 		if r {
-			build()
+			build(g)
 		} else if c {
 			if contentIsPresent || content2IsPresent || indexIsPresent {
 				fmt.Println("Table of contents or index already exists! Run: " + filename + " -r to rebuild.")
 				return
 			}
 
-			build()
+			build(g)
 		}
 
 		if query != "" {
