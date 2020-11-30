@@ -11,13 +11,12 @@ import (
 	"github.com/cheggaaa/pb"
 )
 
-// TranscriptDS is a data structure which stores transcript along with its formation.
+// TranscriptDS is a data structure which stores information about transcript.
 type TranscriptDS struct {
-	ID         string
-	Title      string
-	Category   string
-	URL        string
-	Transcript types.Transcript
+	ID       string
+	Title    string
+	Category string
+	URL      string
 }
 
 var base string = "https://spongebob.fandom.com/"
@@ -72,65 +71,48 @@ func contentExtractor(section *goquery.Selection, category string) []TranscriptD
 			url, exists := td.Next().Next().Find("a").Attr("href")
 
 			if id != "" && title != "" && exists {
-				temp = append(temp, TranscriptDS{id, title, category, url, nil})
+				temp = append(temp, TranscriptDS{id, title, category, url})
 			}
 		})
 
 	return temp
 }
 
-// GetTranscript gets transcript as text.
-func (t *TranscriptDS) GetTranscript() {
+// GetTranscript returns transcript.
+func GetTranscript(t TranscriptDS) types.Transcript {
 	var temp string
-
 	util.GetDocument(base + t.URL).Find(".mw-parser-output ul li").Each(
 		func(i int, s *goquery.Selection) {
 			temp += s.Text() + "\n"
 		})
-
-	t.Transcript = parser.ParseTranscript(temp)
+	return parser.ParseTranscript(temp)
 }
 
-// GetAllTranscripts gets all transcripts.
-func GetAllTranscripts(ts []TranscriptDS) {
-	var waiter sync.WaitGroup
-	fmt.Println("Scraping transripts, please wait...")
-	bar := pb.StartNew(len(ts))
-
-	for i := 0; i < len(ts); i++ {
-		waiter.Add(1)
-
-		go func(t *TranscriptDS, bar *pb.ProgressBar) {
-			t.GetTranscript()
-			bar.Increment()
-			waiter.Done()
-		}(&ts[i], bar)
-	}
-
-	waiter.Wait()
-	bar.Finish()
-}
-
-// WriteTranscript saves transcript to the file
-func (t *TranscriptDS) WriteTranscript() {
+// WriteTranscript writes transcript to the file.
+func WriteTranscript(t TranscriptDS, transcript types.Transcript) {
 	util.MkdirAll("output/" + t.Category)
-	util.JSONToFile(t.Transcript, fmt.Sprintf("output/%s[%s] %s.txt", t.Category, t.ID, t.Title))
+	util.JSONToFile(transcript, fmt.Sprintf("output/%s[%s] %s.txt", t.Category, t.ID, t.Title))
 }
 
-// WriteAllTranscripts writes all transcripts.
-func WriteAllTranscripts(ts []TranscriptDS) {
+// GrabTranscript gets transcript and writes it to the file.
+func GrabTranscript(t TranscriptDS) {
+	WriteTranscript(t, GetTranscript(t))
+}
+
+// GrabAllTranscripts gets and writes all transcripts to the files.
+func GrabAllTranscripts(ts []TranscriptDS) {
 	var waiter sync.WaitGroup
-	fmt.Println("Parsing and writing transripts, please wait...")
+	fmt.Println("Scraping, parsing and writing transripts, please wait...")
 	bar := pb.StartNew(len(ts))
 
 	for i := 0; i < len(ts); i++ {
 		waiter.Add(1)
 
-		go func(t *TranscriptDS, bar *pb.ProgressBar) {
-			t.WriteTranscript()
-			waiter.Done()
+		go func(t TranscriptDS, bar *pb.ProgressBar) {
+			GrabTranscript(t)
 			bar.Increment()
-		}(&ts[i], bar)
+			waiter.Done()
+		}(ts[i], bar)
 	}
 
 	waiter.Wait()

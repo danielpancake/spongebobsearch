@@ -18,8 +18,7 @@ import (
 
 func build() {
 	database := grabber.GetContents()
-	grabber.GetAllTranscripts(database)
-	grabber.WriteAllTranscripts(database)
+	grabber.GrabAllTranscripts(database)
 
 	contents := indexer.GenerateContents(database)
 	util.CompressAndWrite(contents, "contents.gz")
@@ -34,7 +33,7 @@ func build() {
 
 func main() {
 	filename := filepath.Base(os.Args[0])
-	info := fmt.Sprintf(`usage: %s [-c | create] [-r | rebuild] [-s <query> | search " query "]
+	info := fmt.Sprintf(`usage: %s [-c | create] [-s <query> | search " query "] [-r | rebuild]
 	
 For the first initialization it is advised to run: %s -c
 This command will grab SpongeBob transcripts and create both table of contents and index`, filename, filename)
